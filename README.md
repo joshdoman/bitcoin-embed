@@ -1,6 +1,6 @@
 # bitcoin-embed
 
-A library for embedding arbitrary data and tagged messages in Bitcoin transactions. This crate provides tools to work with embedded data in Bitcoin transactions through various methods like OP_RETURN outputs, envelope patterns, and taproot annexes.
+A library for embedding arbitrary data and TLV-encoded messages in Bitcoin transactions. This crate provides tools to work with embedded data in Bitcoin transactions through various methods like OP_RETURN outputs, envelope patterns, and taproot annexes.
 
 ## Installation
 

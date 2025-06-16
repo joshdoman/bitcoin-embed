@@ -1,4 +1,4 @@
-//! # Tagged Message Encoding
+//! # Message Encoding
 
 use crate::varint;
 
