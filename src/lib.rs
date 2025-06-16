@@ -1,6 +1,6 @@
 //! # Bitcoin Embed
-//! 
-//! This library supports embedding arbitrary data and TLV-encoded messages in Bitcoin transactions. 
+//!
+//! This library supports embedding arbitrary data and TLV-encoded messages in Bitcoin transactions.
 //!
 //! See README.md for detailed documentation.
 
@@ -53,13 +53,13 @@ pub enum EmbeddingLocation {
     /// An `OP_RETURN` with the output index
     OpReturn {
         /// The index of the transaction output
-        output: usize
+        output: usize,
     },
 
     /// A taproot annex with the input index
     TaprootAnnex {
         /// The index of the transaction input
-        input: usize
+        input: usize,
     },
 
     /// An `OP_FALSE OP_IF <DATA> OP_ENDIF` envelope with the input index, envelope index, and data push sizes
