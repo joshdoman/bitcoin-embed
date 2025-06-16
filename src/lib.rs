@@ -1,6 +1,6 @@
 //! # Bitcoin Embed
 //! 
-//! This library supports embedding arbitrary data and tagged messages in Bitcoin transactions. 
+//! This library supports embedding arbitrary data and TLV-encoded messages in Bitcoin transactions. 
 //!
 //! See README.md for detailed documentation.
 
