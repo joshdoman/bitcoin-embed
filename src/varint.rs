@@ -1,5 +1,8 @@
+//! # LEB128 Variable-Length Encoding
+
 // Source: ordinals/varint.rs
 
+/// Adds an integer to a byte array with LEB128 encoding
 pub fn encode_to_vec(mut n: u128, v: &mut Vec<u8>) {
     while n >> 7 > 0 {
         v.push(n.to_le_bytes()[0] | 0b1000_0000);
@@ -8,6 +11,7 @@ pub fn encode_to_vec(mut n: u128, v: &mut Vec<u8>) {
     v.push(n.to_le_bytes()[0]);
 }
 
+/// Decodes value from a LEB128-encoded integer
 pub fn decode(buffer: &[u8]) -> Result<(u128, usize), Error> {
     let mut n = 0u128;
 
@@ -32,16 +36,21 @@ pub fn decode(buffer: &[u8]) -> Result<(u128, usize), Error> {
     Err(Error::Unterminated)
 }
 
+/// Returns a LEB128-encoded integer
 pub fn encode(n: u128) -> Vec<u8> {
     let mut v = Vec::new();
     encode_to_vec(n, &mut v);
     v
 }
 
+/// VarInt Error
 #[derive(PartialEq, Debug)]
 pub enum Error {
+    /// Too long
     Overlong,
+    /// Overflow
     Overflow,
+    /// Unterminated
     Unterminated,
 }
 

@@ -1,3 +1,5 @@
+//! # Script Envelope Encoding
+
 // Based on ordinals/inscriptions/envelope.rs
 
 use {
@@ -17,6 +19,8 @@ use {
 };
 
 type Result<T> = std::result::Result<T, Error>;
+
+/// An Envelope represents a series of data pushes
 pub type Envelope = Vec<Vec<u8>>;
 
 /// Adds envelope to a Bitcoin script using the envelope pattern (OP_FALSE OP_IF ... OP_ENDIF)
@@ -144,7 +148,7 @@ mod tests {
     #[test]
     fn test_empty_script() {
         let script = Script::new();
-        assert_eq!(from_script(&script), Vec::<Envelope>::new());
+        assert_eq!(from_script(script), Vec::<Envelope>::new());
     }
 
     #[test]
@@ -291,7 +295,7 @@ mod tests {
         let script = Builder::new()
             .push_opcode(opcodes::OP_FALSE)
             .push_opcode(opcodes::all::OP_IF)
-            .push_slice(&[0x01]) // Valid push
+            .push_slice([0x01]) // Valid push
             .push_opcode(opcodes::all::OP_IF) // Invalid opcode
             .push_opcode(opcodes::all::OP_ENDIF)
             .into_script();

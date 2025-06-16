@@ -1,7 +1,21 @@
 [package]
-name = "bitcoin-tape"
+name = "bitcoin-embed"
 version = "0.1.0"
+authors = ["Joshua Doman <joshsdoman@gmail.com>"]
+license = "CC0-1.0"
+homepage = "https://github.com/joshdoman/bitcoin-embed"
+repository = "https://github.com/joshdoman/bitcoin-embed"
+description = "A library for embedding arbitrary data and tagged messages in Bitcoin transactions"
+keywords = [ "bitcoin", "embed", "extract", "envelope", "inscribe" ]
+readme = "README.md"
 edition = "2024"
+rust-version = "1.85.0"
+
+[features]
+default = ["std"]
+std = ["bitcoin/std"]
+compiler = []
+trace = []
 
 [dependencies]
 bitcoin = "0.32.6"
