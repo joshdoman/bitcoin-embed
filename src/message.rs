@@ -34,9 +34,11 @@ pub mod tags {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     /// A tag
-    tag: Tag,
+    pub tag: Tag,
     /// A vector of bytes
-    body: Vec<u8>,
+    pub body: Vec<u8>,
+    /// Private field to prevent direct construction
+    _private: bool,
 }
 
 impl Message {
@@ -51,17 +53,11 @@ impl Message {
             return Err(Error::InvalidByteCount);
         }
 
-        Ok(Self { tag, body })
-    }
-
-    /// Returns the message tag
-    pub fn tag(&self) -> Tag {
-        self.tag
-    }
-
-    /// Returns the message body
-    pub fn body(&self) -> &[u8] {
-        &self.body
+        Ok(Self {
+            tag,
+            body,
+            _private: false,
+        })
     }
 
     /// Encodes messages as raw bytes.
@@ -78,10 +74,10 @@ impl Message {
         for (i, message) in messsages.into_iter().enumerate() {
             let is_last = i == len - 1;
 
-            if message.tag() == last_tag {
+            if message.tag == last_tag {
                 bytes.push(is_last as u8);
             } else {
-                bytes.extend(varint::encode(2 * message.tag() + (is_last as u128)));
+                bytes.extend(varint::encode(2 * message.tag + (is_last as u128)));
                 last_tag = message.tag;
             }
 
@@ -127,6 +123,7 @@ impl Message {
                 messages.push(Self {
                     tag,
                     body: bytes[index..].to_vec(),
+                    _private: false,
                 });
                 break;
             }
@@ -157,6 +154,7 @@ impl Message {
             messages.push(Self {
                 tag,
                 body: bytes[index..(index + length)].to_vec(),
+                _private: false,
             });
             index += length;
         }
@@ -188,8 +186,8 @@ mod tests {
     #[test]
     fn test_new_valid() {
         let data = Message::new(123, vec![1, 2, 3]).unwrap();
-        assert_eq!(data.tag(), 123);
-        assert_eq!(data.body(), vec![1, 2, 3]);
+        assert_eq!(data.tag, 123);
+        assert_eq!(data.body, vec![1, 2, 3]);
     }
 
     #[test]
@@ -251,10 +249,10 @@ mod tests {
         let decoded = Message::decode(&encoded).unwrap();
 
         assert_eq!(decoded.len(), 2);
-        assert_eq!(decoded[0].tag(), 1);
-        assert_eq!(decoded[0].body(), vec![1, 2]);
-        assert_eq!(decoded[1].tag(), 2);
-        assert_eq!(decoded[1].body(), vec![3, 4, 5]);
+        assert_eq!(decoded[0].tag, 1);
+        assert_eq!(decoded[0].body, vec![1, 2]);
+        assert_eq!(decoded[1].tag, 2);
+        assert_eq!(decoded[1].body, vec![3, 4, 5]);
     }
 
     #[test]
@@ -266,12 +264,12 @@ mod tests {
         let decoded = Message::decode(&encoded).unwrap();
 
         assert_eq!(decoded.len(), 3);
-        assert_eq!(decoded[0].tag(), 1);
-        assert_eq!(decoded[0].body(), vec![1, 2]);
-        assert_eq!(decoded[1].tag(), 1); // Repeated tag should be the same as previous
-        assert_eq!(decoded[1].body(), vec![3, 4]);
-        assert_eq!(decoded[2].tag(), 2);
-        assert_eq!(decoded[2].body(), vec![5, 6]);
+        assert_eq!(decoded[0].tag, 1);
+        assert_eq!(decoded[0].body, vec![1, 2]);
+        assert_eq!(decoded[1].tag, 1); // Repeated tag should be the same as previous
+        assert_eq!(decoded[1].body, vec![3, 4]);
+        assert_eq!(decoded[2].tag, 2);
+        assert_eq!(decoded[2].body, vec![5, 6]);
     }
 
     #[test]
@@ -312,8 +310,8 @@ mod tests {
 
         let decoded = Message::decode(&encoded).unwrap();
         assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].tag(), 3);
-        assert_eq!(decoded[0].body(), Vec::<u8>::new());
+        assert_eq!(decoded[0].tag, 3);
+        assert_eq!(decoded[0].body, Vec::<u8>::new());
     }
 
     #[test]
@@ -323,8 +321,8 @@ mod tests {
         let decoded = Message::decode(&encoded).unwrap();
 
         assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].tag(), 5);
-        assert_eq!(decoded[0].body(), Vec::<u8>::new());
+        assert_eq!(decoded[0].tag, 5);
+        assert_eq!(decoded[0].body, Vec::<u8>::new());
     }
 
     #[test]
@@ -349,8 +347,8 @@ mod tests {
         let decoded = Message::decode(&encoded).unwrap();
 
         assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].tag(), large_tag);
-        assert_eq!(decoded[0].body(), vec![9, 8, 7]);
+        assert_eq!(decoded[0].tag, large_tag);
+        assert_eq!(decoded[0].body, vec![9, 8, 7]);
     }
 
     #[test]

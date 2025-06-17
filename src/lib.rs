@@ -20,6 +20,7 @@ compile_error!("`std` must be enabled");
 
 use bitcoin::{Transaction, Txid, taproot::LeafVersion};
 use std::fmt;
+use std::str::FromStr;
 
 pub mod envelope;
 pub mod message;
@@ -29,7 +30,7 @@ pub mod varint;
 pub const TAPROOT_ANNEX_DATA_TAG: u8 = 0;
 
 /// The script type used by an envelope
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ScriptType {
     /// Legacy script (P2WSH)
     Legacy,
@@ -38,7 +39,7 @@ pub enum ScriptType {
 }
 
 /// The type of location where data may exist in a transaction
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum EmbeddingType {
     /// An `OP_RETURN`
     OpReturn,
@@ -93,6 +94,34 @@ impl EmbeddingLocation {
     }
 }
 
+/// A unique identifier for an embedding
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EmbeddingId {
+    /// The transaction ID
+    pub txid: Txid,
+    /// The embedding type
+    pub embedding_type: EmbeddingType,
+    /// The input or output index
+    pub index: usize,
+    /// The sub-index (only for envelope embeddings)
+    pub sub_index: Option<usize>,
+    /// Private field to prevent direct construction
+    _private: bool,
+}
+
+/// Error types for decoding an EmbeddingId
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbeddingIdError {
+    /// Invalid format for embedding ID
+    InvalidFormat,
+    /// Invalid transaction ID
+    InvalidTxid,
+    /// Invalid embedding type
+    InvalidType,
+    /// Invalid index value
+    InvalidIndex,
+}
+
 /// A struct containing data and its location in a transaction
 #[derive(Debug, Clone, PartialEq)]
 pub struct Embedding {
@@ -105,6 +134,25 @@ pub struct Embedding {
 }
 
 impl Embedding {
+    /// Returns the embedding id
+    pub fn id(&self) -> EmbeddingId {
+        let embedding_type = self.location.to_type();
+
+        let (index, sub_index) = match self.location {
+            EmbeddingLocation::OpReturn { output } => (output, None),
+            EmbeddingLocation::TaprootAnnex { input } => (input, None),
+            EmbeddingLocation::WitnessEnvelope { input, index, .. } => (input, Some(index)),
+        };
+
+        EmbeddingId {
+            txid: self.txid,
+            embedding_type,
+            index,
+            sub_index,
+            _private: false,
+        }
+    }
+
     /// Returns the embedding type
     pub fn to_type(&self) -> EmbeddingType {
         self.location.to_type()
@@ -242,6 +290,92 @@ impl fmt::Display for EmbeddingLocation {
                 )
             }
         }
+    }
+}
+
+impl fmt::Display for EmbeddingId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.embedding_type {
+            EmbeddingType::OpReturn => {
+                write!(f, "{}:rt:{}", self.txid, self.index)
+            }
+            EmbeddingType::TaprootAnnex => {
+                write!(f, "{}:ta:{}", self.txid, self.index)
+            }
+            EmbeddingType::WitnessEnvelope(script_type) => {
+                let type_code = match script_type {
+                    ScriptType::Legacy => "le",
+                    ScriptType::Tapscript => "te",
+                };
+
+                if let Some(sub_index) = self.sub_index {
+                    if sub_index > 0 {
+                        return write!(
+                            f,
+                            "{}:{}:{}:{}",
+                            self.txid, type_code, self.index, sub_index
+                        );
+                    }
+                }
+
+                write!(f, "{}:{}:{}", self.txid, type_code, self.index)
+            }
+        }
+    }
+}
+
+impl FromStr for EmbeddingId {
+    type Err = EmbeddingIdError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+
+        if parts.len() < 3 || parts.len() > 4 {
+            return Err(EmbeddingIdError::InvalidFormat);
+        }
+
+        let txid = Txid::from_str(parts[0]).map_err(|_| EmbeddingIdError::InvalidTxid)?;
+
+        let embedding_type = match parts[1] {
+            "rt" => EmbeddingType::OpReturn,
+            "ta" => EmbeddingType::TaprootAnnex,
+            "le" => EmbeddingType::WitnessEnvelope(ScriptType::Legacy),
+            "te" => EmbeddingType::WitnessEnvelope(ScriptType::Tapscript),
+            _ => return Err(EmbeddingIdError::InvalidType),
+        };
+
+        let index = parts[2]
+            .parse::<usize>()
+            .map_err(|_| EmbeddingIdError::InvalidIndex)?;
+
+        let mut sub_index = if parts.len() == 4 {
+            Some(
+                parts[3]
+                    .parse::<usize>()
+                    .map_err(|_| EmbeddingIdError::InvalidIndex)?,
+            )
+        } else {
+            None
+        };
+
+        // sub_index should only be present in envelopes
+        match embedding_type {
+            EmbeddingType::WitnessEnvelope(_) => {
+                if sub_index.is_none() {
+                    sub_index = Some(0);
+                }
+            }
+            _ if sub_index.is_some() => return Err(EmbeddingIdError::InvalidFormat),
+            _ => {}
+        }
+
+        Ok(Self {
+            txid,
+            embedding_type,
+            index,
+            sub_index,
+            _private: false,
+        })
     }
 }
 
@@ -669,5 +803,297 @@ mod tests {
         for embedding in &embeddings {
             assert_eq!(embedding.txid, tx.compute_txid());
         }
+    }
+
+    #[test]
+    fn test_embedding_id_from_str() {
+        let txid_str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        // OP_RETURN
+        let op_return_id = EmbeddingId::from_str(&format!("{}:rt:2", txid_str)).unwrap();
+        assert_eq!(op_return_id.embedding_type, EmbeddingType::OpReturn);
+        assert_eq!(op_return_id.index, 2);
+        assert_eq!(op_return_id.sub_index, None);
+
+        // TaprootAnnex
+        let annex_id = EmbeddingId::from_str(&format!("{}:ta:1", txid_str)).unwrap();
+        assert_eq!(annex_id.embedding_type, EmbeddingType::TaprootAnnex);
+        assert_eq!(annex_id.index, 1);
+        assert_eq!(annex_id.sub_index, None);
+
+        // Legacy envelope with explicit sub_index
+        let legacy_id = EmbeddingId::from_str(&format!("{}:le:0:3", txid_str)).unwrap();
+        assert_eq!(
+            legacy_id.embedding_type,
+            EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
+        );
+        assert_eq!(legacy_id.index, 0);
+        assert_eq!(legacy_id.sub_index, Some(3));
+
+        // Legacy envelope without sub_index (defaults to 0)
+        let legacy_id2 = EmbeddingId::from_str(&format!("{}:le:0", txid_str)).unwrap();
+        assert_eq!(
+            legacy_id2.embedding_type,
+            EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
+        );
+        assert_eq!(legacy_id2.index, 0);
+        assert_eq!(legacy_id2.sub_index, Some(0));
+
+        // Tapscript envelope with explicit sub_index
+        let tapscript_id = EmbeddingId::from_str(&format!("{}:te:2:1", txid_str)).unwrap();
+        assert_eq!(
+            tapscript_id.embedding_type,
+            EmbeddingType::WitnessEnvelope(ScriptType::Tapscript)
+        );
+        assert_eq!(tapscript_id.index, 2);
+        assert_eq!(tapscript_id.sub_index, Some(1));
+    }
+
+    #[test]
+    fn test_embedding_id_to_string() {
+        let txid = Txid::all_zeros();
+
+        // OP_RETURN id
+        let op_return_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::OpReturn,
+            index: 2,
+            sub_index: None,
+            _private: false,
+        };
+
+        // TaprootAnnex id
+        let annex_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::TaprootAnnex,
+            index: 1,
+            sub_index: None,
+            _private: false,
+        };
+
+        // Legacy envelope id
+        let legacy_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::WitnessEnvelope(ScriptType::Legacy),
+            index: 0,
+            sub_index: Some(3),
+            _private: false,
+        };
+
+        // Tapscript envelope id with index 0 (should not show sub_index)
+        let tapscript_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::WitnessEnvelope(ScriptType::Tapscript),
+            index: 2,
+            sub_index: Some(0),
+            _private: false,
+        };
+
+        let txid_str = txid.to_string();
+
+        assert_eq!(op_return_id.to_string(), format!("{}:rt:2", txid_str));
+        assert_eq!(annex_id.to_string(), format!("{}:ta:1", txid_str));
+        assert_eq!(legacy_id.to_string(), format!("{}:le:0:3", txid_str));
+        assert_eq!(tapscript_id.to_string(), format!("{}:te:2", txid_str));
+    }
+
+    #[test]
+    fn test_embedding_id_invalid_parsing() {
+        let txid_str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        // Too few parts
+        let err = EmbeddingId::from_str(txid_str).unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidFormat);
+
+        // Too many parts
+        let err = EmbeddingId::from_str(&format!("{}:rt:2:3:extra", txid_str)).unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidFormat);
+
+        // Invalid txid
+        let err = EmbeddingId::from_str("invalid:rt:2").unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidTxid);
+
+        // Invalid type
+        let err = EmbeddingId::from_str(&format!("{}:invalid:2", txid_str)).unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidType);
+
+        // Invalid index (not a number)
+        let err = EmbeddingId::from_str(&format!("{}:rt:abc", txid_str)).unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidIndex);
+
+        // Invalid sub_index (not a number)
+        let err = EmbeddingId::from_str(&format!("{}:te:2:abc", txid_str)).unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidIndex);
+
+        // Sub_index not allowed for OP_RETURN
+        let err = EmbeddingId::from_str(&format!("{}:rt:2:1", txid_str)).unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidFormat);
+
+        // Sub_index not allowed for TaprootAnnex
+        let err = EmbeddingId::from_str(&format!("{}:ta:1:2", txid_str)).unwrap_err();
+        assert_eq!(err, EmbeddingIdError::InvalidFormat);
+    }
+
+    #[test]
+    fn test_embedding_id_from_embedding() {
+        let txid = Txid::all_zeros();
+
+        // OP_RETURN embedding
+        let op_return_embedding = Embedding {
+            bytes: vec![1, 2, 3],
+            txid,
+            location: EmbeddingLocation::OpReturn { output: 2 },
+        };
+
+        let op_return_id = op_return_embedding.id();
+        assert_eq!(op_return_id.txid, txid);
+        assert_eq!(op_return_id.embedding_type, EmbeddingType::OpReturn);
+        assert_eq!(op_return_id.index, 2);
+        assert_eq!(op_return_id.sub_index, None);
+
+        // TaprootAnnex embedding
+        let annex_embedding = Embedding {
+            bytes: vec![4, 5, 6],
+            txid,
+            location: EmbeddingLocation::TaprootAnnex { input: 1 },
+        };
+
+        let annex_id = annex_embedding.id();
+        assert_eq!(annex_id.txid, txid);
+        assert_eq!(annex_id.embedding_type, EmbeddingType::TaprootAnnex);
+        assert_eq!(annex_id.index, 1);
+        assert_eq!(annex_id.sub_index, None);
+
+        // WitnessEnvelope (Legacy) with index 0 (no sub_index)
+        let legacy_embedding0 = Embedding {
+            bytes: vec![7, 8, 9],
+            txid,
+            location: EmbeddingLocation::WitnessEnvelope {
+                input: 3,
+                index: 0,
+                pushes: vec![3],
+                script_type: ScriptType::Legacy,
+            },
+        };
+
+        let legacy_id0 = legacy_embedding0.id();
+        assert_eq!(legacy_id0.txid, txid);
+        assert_eq!(
+            legacy_id0.embedding_type,
+            EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
+        );
+        assert_eq!(legacy_id0.index, 3);
+        assert_eq!(legacy_id0.sub_index, Some(0));
+
+        // WitnessEnvelope (Legacy) with index > 0 (has sub_index)
+        let legacy_embedding1 = Embedding {
+            bytes: vec![7, 8, 9],
+            txid,
+            location: EmbeddingLocation::WitnessEnvelope {
+                input: 3,
+                index: 2,
+                pushes: vec![3],
+                script_type: ScriptType::Legacy,
+            },
+        };
+
+        let legacy_id1 = legacy_embedding1.id();
+        assert_eq!(legacy_id1.txid, txid);
+        assert_eq!(
+            legacy_id1.embedding_type,
+            EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
+        );
+        assert_eq!(legacy_id1.index, 3);
+        assert_eq!(legacy_id1.sub_index, Some(2));
+
+        // WitnessEnvelope (Tapscript)
+        let tapscript_embedding = Embedding {
+            bytes: vec![10, 11, 12],
+            txid,
+            location: EmbeddingLocation::WitnessEnvelope {
+                input: 4,
+                index: 1,
+                pushes: vec![3],
+                script_type: ScriptType::Tapscript,
+            },
+        };
+
+        let tapscript_id = tapscript_embedding.id();
+        assert_eq!(tapscript_id.txid, txid);
+        assert_eq!(
+            tapscript_id.embedding_type,
+            EmbeddingType::WitnessEnvelope(ScriptType::Tapscript)
+        );
+        assert_eq!(tapscript_id.index, 4);
+        assert_eq!(tapscript_id.sub_index, Some(1));
+    }
+
+    #[test]
+    fn test_embedding_id_roundtrip() {
+        let txid = Txid::all_zeros();
+
+        // OP_RETURN id
+        let op_return_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::OpReturn,
+            index: 2,
+            sub_index: None,
+            _private: false,
+        };
+
+        let op_return_str = op_return_id.to_string();
+        let op_return_id2 = EmbeddingId::from_str(&op_return_str).unwrap();
+        assert_eq!(op_return_id.txid, op_return_id2.txid);
+        assert_eq!(op_return_id.embedding_type, op_return_id2.embedding_type);
+        assert_eq!(op_return_id.index, op_return_id2.index);
+        assert_eq!(op_return_id.sub_index, op_return_id2.sub_index);
+
+        // TaprootAnnex id
+        let annex_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::TaprootAnnex,
+            index: 1,
+            sub_index: None,
+            _private: false,
+        };
+
+        let annex_str = annex_id.to_string();
+        let annex_id2 = EmbeddingId::from_str(&annex_str).unwrap();
+        assert_eq!(annex_id.txid, annex_id2.txid);
+        assert_eq!(annex_id.embedding_type, annex_id2.embedding_type);
+        assert_eq!(annex_id.index, annex_id2.index);
+        assert_eq!(annex_id.sub_index, annex_id2.sub_index);
+
+        // Legacy envelope id
+        let legacy_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::WitnessEnvelope(ScriptType::Legacy),
+            index: 0,
+            sub_index: Some(3),
+            _private: false,
+        };
+
+        let legacy_str = legacy_id.to_string();
+        let legacy_id2 = EmbeddingId::from_str(&legacy_str).unwrap();
+        assert_eq!(legacy_id.txid, legacy_id2.txid);
+        assert_eq!(legacy_id.embedding_type, legacy_id2.embedding_type);
+        assert_eq!(legacy_id.index, legacy_id2.index);
+        assert_eq!(legacy_id.sub_index, legacy_id2.sub_index);
+
+        // Tapscript envelope id
+        let tapscript_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::WitnessEnvelope(ScriptType::Tapscript),
+            index: 2,
+            sub_index: Some(0),
+            _private: false,
+        };
+
+        let tapscript_str = tapscript_id.to_string();
+        let tapscript_id2 = EmbeddingId::from_str(&tapscript_str).unwrap();
+        assert_eq!(tapscript_id.txid, tapscript_id2.txid);
+        assert_eq!(tapscript_id.embedding_type, tapscript_id2.embedding_type);
+        assert_eq!(tapscript_id.index, tapscript_id2.index);
+        assert_eq!(Some(0), tapscript_id2.sub_index);
     }
 }
