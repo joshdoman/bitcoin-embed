@@ -301,7 +301,7 @@ impl fmt::Display for EmbeddingType {
             EmbeddingType::BareEnvelope => write!(f, "Bare Envelope"),
             EmbeddingType::TaprootAnnex => write!(f, "Taproot Annex"),
             EmbeddingType::WitnessEnvelope(script_type) => {
-                write!(f, "{} Witness Envelope", script_type)
+                write!(f, "{script_type} Witness Envelope")
             }
         }
     }
@@ -311,13 +311,13 @@ impl fmt::Display for EmbeddingLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             EmbeddingLocation::OpReturn { output } => {
-                write!(f, "OP_RETURN at output {}", output)
+                write!(f, "OP_RETURN at output {output}")
             }
             EmbeddingLocation::BareEnvelope { output, index, .. } => {
-                write!(f, "Bare Envelope at output {} (index {})", output, index)
+                write!(f, "Bare Envelope at output {output} (index {index})")
             }
             EmbeddingLocation::TaprootAnnex { input } => {
-                write!(f, "Taproot Annex at input {}", input)
+                write!(f, "Taproot Annex at input {input}")
             }
             EmbeddingLocation::WitnessEnvelope {
                 input,
@@ -327,8 +327,7 @@ impl fmt::Display for EmbeddingLocation {
             } => {
                 write!(
                     f,
-                    "{} Witness Envelope at input {} (index {})",
-                    script_type, input, index
+                    "{script_type} Witness Envelope at input {input} (index {index})"
                 )
             }
         }
@@ -339,10 +338,10 @@ impl fmt::Display for EmbeddingId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.embedding_type {
             EmbeddingType::OpReturn => {
-                write!(f, "{}:rt:{}", self.txid, self.index)
+                write!(f, "{}:{}:{}", self.txid, "rt", self.index)
             }
             EmbeddingType::TaprootAnnex => {
-                write!(f, "{}:ta:{}", self.txid, self.index)
+                write!(f, "{}:{}:{}", self.txid, "ta", self.index)
             }
             EmbeddingType::WitnessEnvelope(script_type) => {
                 let type_code = match script_type {
@@ -954,31 +953,31 @@ mod tests {
         let txid_str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
         // OP_RETURN
-        let op_return_id = EmbeddingId::from_str(&format!("{}:rt:2", txid_str)).unwrap();
+        let op_return_id = EmbeddingId::from_str(&format!("{txid_str}:rt:2")).unwrap();
         assert_eq!(op_return_id.embedding_type, EmbeddingType::OpReturn);
         assert_eq!(op_return_id.index, 2);
         assert_eq!(op_return_id.sub_index, None);
 
         // Bare envelope with explicit sub_index
-        let bare_id = EmbeddingId::from_str(&format!("{}:be:0:3", txid_str)).unwrap();
+        let bare_id = EmbeddingId::from_str(&format!("{txid_str}:be:0:3")).unwrap();
         assert_eq!(bare_id.embedding_type, EmbeddingType::BareEnvelope);
         assert_eq!(bare_id.index, 0);
         assert_eq!(bare_id.sub_index, Some(3));
 
         // Bare envelope without sub_index (defaults to 0)
-        let bare_id2 = EmbeddingId::from_str(&format!("{}:be:0", txid_str)).unwrap();
+        let bare_id2 = EmbeddingId::from_str(&format!("{txid_str}:be:0")).unwrap();
         assert_eq!(bare_id2.embedding_type, EmbeddingType::BareEnvelope);
         assert_eq!(bare_id2.index, 0);
         assert_eq!(bare_id2.sub_index, Some(0));
 
         // TaprootAnnex
-        let annex_id = EmbeddingId::from_str(&format!("{}:ta:1", txid_str)).unwrap();
+        let annex_id = EmbeddingId::from_str(&format!("{txid_str}:ta:1")).unwrap();
         assert_eq!(annex_id.embedding_type, EmbeddingType::TaprootAnnex);
         assert_eq!(annex_id.index, 1);
         assert_eq!(annex_id.sub_index, None);
 
         // Legacy envelope with explicit sub_index
-        let legacy_id = EmbeddingId::from_str(&format!("{}:le:0:3", txid_str)).unwrap();
+        let legacy_id = EmbeddingId::from_str(&format!("{txid_str}:le:0:3")).unwrap();
         assert_eq!(
             legacy_id.embedding_type,
             EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
@@ -987,7 +986,7 @@ mod tests {
         assert_eq!(legacy_id.sub_index, Some(3));
 
         // Legacy envelope without sub_index (defaults to 0)
-        let legacy_id2 = EmbeddingId::from_str(&format!("{}:le:0", txid_str)).unwrap();
+        let legacy_id2 = EmbeddingId::from_str(&format!("{txid_str}:le:0")).unwrap();
         assert_eq!(
             legacy_id2.embedding_type,
             EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
@@ -996,7 +995,7 @@ mod tests {
         assert_eq!(legacy_id2.sub_index, Some(0));
 
         // Tapscript envelope with explicit sub_index
-        let tapscript_id = EmbeddingId::from_str(&format!("{}:te:2:1", txid_str)).unwrap();
+        let tapscript_id = EmbeddingId::from_str(&format!("{txid_str}:te:2:1")).unwrap();
         assert_eq!(
             tapscript_id.embedding_type,
             EmbeddingType::WitnessEnvelope(ScriptType::Tapscript)
