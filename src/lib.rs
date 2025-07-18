@@ -263,7 +263,7 @@ impl fmt::Display for EmbeddingType {
         match self {
             EmbeddingType::OpReturn => write!(f, "OP_RETURN"),
             EmbeddingType::TaprootAnnex => write!(f, "Taproot Annex"),
-            EmbeddingType::WitnessEnvelope(script_type) => write!(f, "{} Envelope", script_type),
+            EmbeddingType::WitnessEnvelope(script_type) => write!(f, "{script_type} Envelope"),
         }
     }
 }
@@ -272,10 +272,10 @@ impl fmt::Display for EmbeddingLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             EmbeddingLocation::OpReturn { output } => {
-                write!(f, "OP_RETURN at output {}", output)
+                write!(f, "OP_RETURN at output {output}")
             }
             EmbeddingLocation::TaprootAnnex { input } => {
-                write!(f, "Taproot Annex at input {}", input)
+                write!(f, "Taproot Annex at input {input}")
             }
             EmbeddingLocation::WitnessEnvelope {
                 input,
@@ -283,11 +283,7 @@ impl fmt::Display for EmbeddingLocation {
                 script_type,
                 ..
             } => {
-                write!(
-                    f,
-                    "{} Envelope at input {} (index {})",
-                    script_type, input, index
-                )
+                write!(f, "{script_type} Envelope at input {input} (index {index})",)
             }
         }
     }
@@ -810,19 +806,19 @@ mod tests {
         let txid_str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
         // OP_RETURN
-        let op_return_id = EmbeddingId::from_str(&format!("{}:rt:2", txid_str)).unwrap();
+        let op_return_id = EmbeddingId::from_str(&format!("{txid_str}:rt:2")).unwrap();
         assert_eq!(op_return_id.embedding_type, EmbeddingType::OpReturn);
         assert_eq!(op_return_id.index, 2);
         assert_eq!(op_return_id.sub_index, None);
 
         // TaprootAnnex
-        let annex_id = EmbeddingId::from_str(&format!("{}:ta:1", txid_str)).unwrap();
+        let annex_id = EmbeddingId::from_str(&format!("{txid_str}:ta:1")).unwrap();
         assert_eq!(annex_id.embedding_type, EmbeddingType::TaprootAnnex);
         assert_eq!(annex_id.index, 1);
         assert_eq!(annex_id.sub_index, None);
 
         // Legacy envelope with explicit sub_index
-        let legacy_id = EmbeddingId::from_str(&format!("{}:le:0:3", txid_str)).unwrap();
+        let legacy_id = EmbeddingId::from_str(&format!("{txid_str}:le:0:3")).unwrap();
         assert_eq!(
             legacy_id.embedding_type,
             EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
@@ -831,7 +827,7 @@ mod tests {
         assert_eq!(legacy_id.sub_index, Some(3));
 
         // Legacy envelope without sub_index (defaults to 0)
-        let legacy_id2 = EmbeddingId::from_str(&format!("{}:le:0", txid_str)).unwrap();
+        let legacy_id2 = EmbeddingId::from_str(&format!("{txid_str}:le:0")).unwrap();
         assert_eq!(
             legacy_id2.embedding_type,
             EmbeddingType::WitnessEnvelope(ScriptType::Legacy)
@@ -840,7 +836,7 @@ mod tests {
         assert_eq!(legacy_id2.sub_index, Some(0));
 
         // Tapscript envelope with explicit sub_index
-        let tapscript_id = EmbeddingId::from_str(&format!("{}:te:2:1", txid_str)).unwrap();
+        let tapscript_id = EmbeddingId::from_str(&format!("{txid_str}:te:2:1")).unwrap();
         assert_eq!(
             tapscript_id.embedding_type,
             EmbeddingType::WitnessEnvelope(ScriptType::Tapscript)
@@ -891,10 +887,10 @@ mod tests {
 
         let txid_str = txid.to_string();
 
-        assert_eq!(op_return_id.to_string(), format!("{}:rt:2", txid_str));
-        assert_eq!(annex_id.to_string(), format!("{}:ta:1", txid_str));
-        assert_eq!(legacy_id.to_string(), format!("{}:le:0:3", txid_str));
-        assert_eq!(tapscript_id.to_string(), format!("{}:te:2", txid_str));
+        assert_eq!(op_return_id.to_string(), format!("{txid_str}:rt:2"));
+        assert_eq!(annex_id.to_string(), format!("{txid_str}:ta:1"));
+        assert_eq!(legacy_id.to_string(), format!("{txid_str}:le:0:3"));
+        assert_eq!(tapscript_id.to_string(), format!("{txid_str}:te:2"));
     }
 
     #[test]
@@ -906,7 +902,7 @@ mod tests {
         assert_eq!(err, EmbeddingIdError::InvalidFormat);
 
         // Too many parts
-        let err = EmbeddingId::from_str(&format!("{}:rt:2:3:extra", txid_str)).unwrap_err();
+        let err = EmbeddingId::from_str(&format!("{txid_str}:rt:2:3:extra")).unwrap_err();
         assert_eq!(err, EmbeddingIdError::InvalidFormat);
 
         // Invalid txid
@@ -914,23 +910,23 @@ mod tests {
         assert_eq!(err, EmbeddingIdError::InvalidTxid);
 
         // Invalid type
-        let err = EmbeddingId::from_str(&format!("{}:invalid:2", txid_str)).unwrap_err();
+        let err = EmbeddingId::from_str(&format!("{txid_str}:invalid:2")).unwrap_err();
         assert_eq!(err, EmbeddingIdError::InvalidType);
 
         // Invalid index (not a number)
-        let err = EmbeddingId::from_str(&format!("{}:rt:abc", txid_str)).unwrap_err();
+        let err = EmbeddingId::from_str(&format!("{txid_str}:rt:abc")).unwrap_err();
         assert_eq!(err, EmbeddingIdError::InvalidIndex);
 
         // Invalid sub_index (not a number)
-        let err = EmbeddingId::from_str(&format!("{}:te:2:abc", txid_str)).unwrap_err();
+        let err = EmbeddingId::from_str(&format!("{txid_str}:te:2:abc")).unwrap_err();
         assert_eq!(err, EmbeddingIdError::InvalidIndex);
 
         // Sub_index not allowed for OP_RETURN
-        let err = EmbeddingId::from_str(&format!("{}:rt:2:1", txid_str)).unwrap_err();
+        let err = EmbeddingId::from_str(&format!("{txid_str}:rt:2:1")).unwrap_err();
         assert_eq!(err, EmbeddingIdError::InvalidFormat);
 
         // Sub_index not allowed for TaprootAnnex
-        let err = EmbeddingId::from_str(&format!("{}:ta:1:2", txid_str)).unwrap_err();
+        let err = EmbeddingId::from_str(&format!("{txid_str}:ta:1:2")).unwrap_err();
         assert_eq!(err, EmbeddingIdError::InvalidFormat);
     }
 
