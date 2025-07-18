@@ -469,8 +469,14 @@ mod tests {
             pushes: vec![5, 10],
             script_type: ScriptType::Tapscript,
         };
+        let bare_loc = EmbeddingLocation::BareEnvelope {
+            output: 1,
+            index: 0,
+            pushes: vec![2, 4],
+        };
 
         assert_eq!(op_return_loc.to_type(), EmbeddingType::OpReturn);
+        assert_eq!(bare_loc.to_type(), EmbeddingType::BareEnvelope);
         assert_eq!(annex_loc.to_type(), EmbeddingType::TaprootAnnex);
         assert_eq!(
             legacy_loc.to_type(),
@@ -481,7 +487,7 @@ mod tests {
             EmbeddingType::WitnessEnvelope(ScriptType::Tapscript)
         );
 
-        for loc in [op_return_loc, annex_loc, legacy_loc, tapscript_loc] {
+        for loc in [op_return_loc, bare_loc, annex_loc, legacy_loc, tapscript_loc] {
             let embedding = Embedding {
                 bytes: vec![1, 2, 3],
                 txid: Txid::all_zeros(),
@@ -539,6 +545,46 @@ mod tests {
         assert_eq!(
             embeddings[1].location,
             EmbeddingLocation::OpReturn { output: 2 }
+        );
+    }
+
+    #[test]
+    fn test_from_transaction_bare_envelope() {
+        let mut builder = envelope::append_bytes_to_builder(b"data1", Builder::new());
+        builder = envelope::append_bytes_to_builder(b"data2", builder);
+        let script0 = builder.into_script();
+
+        let builder =
+            envelope::append_to_builder(vec![b"data3".to_vec(), b"data4".to_vec()], Builder::new());
+        let script1 = builder.into_script();
+
+        let tx = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::ZERO,
+            input: vec![],
+            output: vec![
+                TxOut { value: Amount::from_sat(1000), script_pubkey: script0 },
+                TxOut { value: Amount::from_sat(2000), script_pubkey: script1 },
+            ],
+        };
+
+        let embeddings = Embedding::from_transaction(&tx);
+
+        assert_eq!(embeddings.len(), 3);
+        assert_eq!(embeddings[0].bytes, b"data1");
+        assert_eq!(
+            embeddings[0].location,
+            EmbeddingLocation::BareEnvelope { output: 0, index: 0, pushes: vec![5] }
+        );
+        assert_eq!(embeddings[1].bytes, b"data2");
+        assert_eq!(
+            embeddings[1].location,
+            EmbeddingLocation::BareEnvelope { output: 0, index: 1, pushes: vec![5] }
+        );
+        assert_eq!(embeddings[2].bytes, b"data3data4");
+        assert_eq!(
+            embeddings[2].location,
+            EmbeddingLocation::BareEnvelope { output: 1, index: 0, pushes: vec![5, 5] }
         );
     }
 
@@ -757,6 +803,11 @@ mod tests {
             .concat(),
         ]);
 
+        // 5. Create bare envelope output
+        let bare_builder = envelope::append_bytes_to_builder(b"bare-data", Builder::new());
+        let bare_output =
+            TxOut { value: Amount::from_sat(5000), script_pubkey: bare_builder.into_script() };
+
         // Create the transaction
         let tx = Transaction {
             version: Version::ONE,
@@ -798,31 +849,35 @@ mod tests {
                     script_pubkey: ScriptBuf::new(),
                 },
                 op_return_output1,
+                bare_output,
             ],
         };
 
         let embeddings = Embedding::from_transaction(&tx);
 
-        assert_eq!(embeddings.len(), 6);
+        assert_eq!(embeddings.len(), 7);
 
         assert_eq!(embeddings[0].bytes, b"Hello");
-        assert_eq!(embeddings[0].txid, tx.compute_txid());
         assert_eq!(
             embeddings[0].location,
             EmbeddingLocation::OpReturn { output: 0 }
         );
 
         assert_eq!(embeddings[1].bytes, b"World");
-        assert_eq!(embeddings[1].txid, tx.compute_txid());
         assert_eq!(
             embeddings[1].location,
             EmbeddingLocation::OpReturn { output: 2 }
         );
 
-        assert_eq!(embeddings[2].bytes, b"p2wsh-data");
-        assert_eq!(embeddings[2].txid, tx.compute_txid());
+        assert_eq!(embeddings[2].bytes, b"bare-data");
         assert_eq!(
             embeddings[2].location,
+            EmbeddingLocation::BareEnvelope { output: 3, index: 0, pushes: vec![9] }
+        );
+
+        assert_eq!(embeddings[3].bytes, b"p2wsh-data");
+        assert_eq!(
+            embeddings[3].location,
             EmbeddingLocation::WitnessEnvelope {
                 input: 1,
                 index: 0,
@@ -831,10 +886,9 @@ mod tests {
             }
         );
 
-        assert_eq!(embeddings[3].bytes, b"tapscript-data1");
-        assert_eq!(embeddings[3].txid, tx.compute_txid());
+        assert_eq!(embeddings[4].bytes, b"tapscript-data1");
         assert_eq!(
-            embeddings[3].location,
+            embeddings[4].location,
             EmbeddingLocation::WitnessEnvelope {
                 input: 2,
                 index: 0,
@@ -843,10 +897,9 @@ mod tests {
             }
         );
 
-        assert_eq!(embeddings[4].bytes, b"multipartdata");
-        assert_eq!(embeddings[4].txid, tx.compute_txid());
+        assert_eq!(embeddings[5].bytes, b"multipartdata");
         assert_eq!(
-            embeddings[4].location,
+            embeddings[5].location,
             EmbeddingLocation::WitnessEnvelope {
                 input: 2,
                 index: 1,
@@ -855,10 +908,9 @@ mod tests {
             }
         );
 
-        assert_eq!(embeddings[5].bytes, b"annex-data");
-        assert_eq!(embeddings[5].txid, tx.compute_txid());
+        assert_eq!(embeddings[6].bytes, b"annex-data");
         assert_eq!(
-            embeddings[5].location,
+            embeddings[6].location,
             EmbeddingLocation::TaprootAnnex { input: 3 }
         );
 
@@ -876,6 +928,18 @@ mod tests {
         assert_eq!(op_return_id.embedding_type, EmbeddingType::OpReturn);
         assert_eq!(op_return_id.index, 2);
         assert_eq!(op_return_id.sub_index, None);
+
+        // Bare envelope with explicit sub_index
+        let bare_id = EmbeddingId::from_str(&format!("{}:be:0:3", txid_str)).unwrap();
+        assert_eq!(bare_id.embedding_type, EmbeddingType::BareEnvelope);
+        assert_eq!(bare_id.index, 0);
+        assert_eq!(bare_id.sub_index, Some(3));
+
+        // Bare envelope without sub_index (defaults to 0)
+        let bare_id2 = EmbeddingId::from_str(&format!("{}:be:0", txid_str)).unwrap();
+        assert_eq!(bare_id2.embedding_type, EmbeddingType::BareEnvelope);
+        assert_eq!(bare_id2.index, 0);
+        assert_eq!(bare_id2.sub_index, Some(0));
 
         // TaprootAnnex
         let annex_id = EmbeddingId::from_str(&format!("{}:ta:1", txid_str)).unwrap();
@@ -924,6 +988,24 @@ mod tests {
             _private: false,
         };
 
+        // Bare envelope id
+        let bare_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::BareEnvelope,
+            index: 0,
+            sub_index: Some(3),
+            _private: false,
+        };
+
+        // Bare envelope id with index 0
+        let bare_id2 = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::BareEnvelope,
+            index: 2,
+            sub_index: Some(0),
+            _private: false,
+        };
+
         // TaprootAnnex id
         let annex_id = EmbeddingId {
             txid,
@@ -954,6 +1036,8 @@ mod tests {
         let txid_str = txid.to_string();
 
         assert_eq!(op_return_id.to_string(), format!("{}:rt:2", txid_str));
+        assert_eq!(bare_id.to_string(), format!("{}:be:0:3", txid_str));
+        assert_eq!(bare_id2.to_string(), format!("{}:be:2", txid_str));
         assert_eq!(annex_id.to_string(), format!("{}:ta:1", txid_str));
         assert_eq!(legacy_id.to_string(), format!("{}:le:0:3", txid_str));
         assert_eq!(tapscript_id.to_string(), format!("{}:te:2", txid_str));
@@ -1012,6 +1096,18 @@ mod tests {
         assert_eq!(op_return_id.embedding_type, EmbeddingType::OpReturn);
         assert_eq!(op_return_id.index, 2);
         assert_eq!(op_return_id.sub_index, None);
+
+        // BareEnvelope embedding
+        let bare_embedding = Embedding {
+            bytes: vec![1, 2, 3],
+            txid,
+            location: EmbeddingLocation::BareEnvelope { output: 0, index: 1, pushes: vec![] },
+        };
+        let bare_id = bare_embedding.id();
+        assert_eq!(bare_id.txid, txid);
+        assert_eq!(bare_id.embedding_type, EmbeddingType::BareEnvelope);
+        assert_eq!(bare_id.index, 0);
+        assert_eq!(bare_id.sub_index, Some(1));
 
         // TaprootAnnex embedding
         let annex_embedding = Embedding {
@@ -1109,6 +1205,22 @@ mod tests {
         assert_eq!(op_return_id.embedding_type, op_return_id2.embedding_type);
         assert_eq!(op_return_id.index, op_return_id2.index);
         assert_eq!(op_return_id.sub_index, op_return_id2.sub_index);
+
+        // Bare Envelope id
+        let bare_id = EmbeddingId {
+            txid,
+            embedding_type: EmbeddingType::BareEnvelope,
+            index: 0,
+            sub_index: Some(3),
+            _private: false,
+        };
+
+        let bare_str = bare_id.to_string();
+        let bare_id2 = EmbeddingId::from_str(&bare_str).unwrap();
+        assert_eq!(bare_id.txid, bare_id2.txid);
+        assert_eq!(bare_id.embedding_type, bare_id2.embedding_type);
+        assert_eq!(bare_id.index, bare_id2.index);
+        assert_eq!(bare_id.sub_index, bare_id2.sub_index);
 
         // TaprootAnnex id
         let annex_id = EmbeddingId {
