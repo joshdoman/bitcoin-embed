@@ -12,11 +12,12 @@ bitcoin-embed = "0.1.0"
 ## Features
 
 - **Embedding Extraction**: Extract data from Bitcoin transactions with detailed location information. Supports:
-  - OP_RETURN outputs
+  - `OP_RETURN` outputs
   - Taproot annexes
   - `OP_FALSE OP_IF ... OP_ENDIF` witness envelopes (supports P2TR and P2WSH)
+  - Bare output script envelopes
   
-  *Note: P2WSH envelopes require inputs with at least 2 witness elements*
+  *Note: P2WSH envelopes require an input with at least 2 witness elements*
 
 - **TLV Message Encoding**: Efficiently encode and decode a series of tagged messages
 
@@ -67,11 +68,17 @@ for embed in embeddings {
             println!("Found taproot annex data at input {}: {:?}", input, embed.bytes);
         },
         
-        // Handle envelope data (P2WSH or Tapscript)
+        // Handle witness envelope data (P2WSH or Tapscript)
         EmbeddingLocation::WitnessEnvelope { input, index, script_type, .. } => {
-            println!("Found envelope data at input {} (index {}): {:?}", 
+            println!("Found witness envelope data at input {} (index {}): {:?}", 
                      input, index, embed.bytes);
             println!("Script type: {:?}", script_type);
+        }
+
+        // Handle bare output envelope data
+        EmbeddingLocation::BareEnvelope { output, index, .. } => {
+            println!("Found bare envelope data at output {} (index {}): {:?}", 
+                     input, index, embed.bytes);
         }
     }
 }
