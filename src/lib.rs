@@ -300,7 +300,9 @@ impl fmt::Display for EmbeddingType {
             EmbeddingType::OpReturn => write!(f, "OP_RETURN"),
             EmbeddingType::BareEnvelope => write!(f, "Bare Envelope"),
             EmbeddingType::TaprootAnnex => write!(f, "Taproot Annex"),
-            EmbeddingType::WitnessEnvelope(script_type) => write!(f, "{script_type} Envelope"),
+            EmbeddingType::WitnessEnvelope(script_type) => {
+                write!(f, "{script_type} Witness Envelope")
+            }
         }
     }
 }
@@ -312,7 +314,7 @@ impl fmt::Display for EmbeddingLocation {
                 write!(f, "OP_RETURN at output {output}")
             }
             EmbeddingLocation::BareEnvelope { output, index, .. } => {
-                write!(f, "Bare Envelope at output {} (index {})", output, index)
+                write!(f, "Bare Envelope at output {output} (index {index})")
             }
             EmbeddingLocation::TaprootAnnex { input } => {
                 write!(f, "Taproot Annex at input {input}")
@@ -323,7 +325,10 @@ impl fmt::Display for EmbeddingLocation {
                 script_type,
                 ..
             } => {
-                write!(f, "{script_type} Envelope at input {input} (index {index})",)
+                write!(
+                    f,
+                    "{script_type} Witness Envelope at input {input} (index {index})"
+                )
             }
         }
     }
@@ -333,10 +338,10 @@ impl fmt::Display for EmbeddingId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.embedding_type {
             EmbeddingType::OpReturn => {
-                write!(f, "{}:rt:{}", self.txid, self.index)
+                write!(f, "{}:{}:{}", self.txid, "rt", self.index)
             }
             EmbeddingType::TaprootAnnex => {
-                write!(f, "{}:ta:{}", self.txid, self.index)
+                write!(f, "{}:{}:{}", self.txid, "ta", self.index)
             }
             EmbeddingType::WitnessEnvelope(script_type) => {
                 let type_code = match script_type {
@@ -954,13 +959,13 @@ mod tests {
         assert_eq!(op_return_id.sub_index, None);
 
         // Bare envelope with explicit sub_index
-        let bare_id = EmbeddingId::from_str(&format!("{}:be:0:3", txid_str)).unwrap();
+        let bare_id = EmbeddingId::from_str(&format!("{txid_str}:be:0:3")).unwrap();
         assert_eq!(bare_id.embedding_type, EmbeddingType::BareEnvelope);
         assert_eq!(bare_id.index, 0);
         assert_eq!(bare_id.sub_index, Some(3));
 
         // Bare envelope without sub_index (defaults to 0)
-        let bare_id2 = EmbeddingId::from_str(&format!("{}:be:0", txid_str)).unwrap();
+        let bare_id2 = EmbeddingId::from_str(&format!("{txid_str}:be:0")).unwrap();
         assert_eq!(bare_id2.embedding_type, EmbeddingType::BareEnvelope);
         assert_eq!(bare_id2.index, 0);
         assert_eq!(bare_id2.sub_index, Some(0));
