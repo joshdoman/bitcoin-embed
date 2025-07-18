@@ -45,8 +45,10 @@ pub enum EmbeddingType {
     OpReturn,
     /// A taproot annex
     TaprootAnnex,
-    /// An `OP_FALSE OP_IF <DATA> OP_ENDIF` envelope
+    /// An `OP_FALSE OP_IF <DATA> OP_ENDIF` envelope in witness script
     WitnessEnvelope(ScriptType),
+    /// An `OP_FALSE OP_IF <DATA> OP_ENDIF` envelope in bare output script
+    BareEnvelope,
 }
 
 /// The location where data exists in a transaction
@@ -64,7 +66,7 @@ pub enum EmbeddingLocation {
         input: usize,
     },
 
-    /// An `OP_FALSE OP_IF <DATA> OP_ENDIF` envelope with the input index, envelope index, and data push sizes
+    /// An `OP_FALSE OP_IF <DATA> OP_ENDIF` witness envelope with the input index, envelope index, and data push sizes
     ///
     /// Witness envelopes are found in the following contexts:
     /// 1. TapScript leaf scripts in Taproot script path spends (P2TR)
@@ -79,6 +81,16 @@ pub enum EmbeddingLocation {
         /// The script type
         script_type: ScriptType,
     },
+
+    /// An `OP_FALSE OP_IF <DATA> OP_ENDIF` bare script envelope with the output index, envelope index, and data push sizes
+    BareEnvelope {
+        /// The index of the transaction output
+        output: usize,
+        /// The index of the envelope within the script
+        index: usize,
+        /// The sizes of individual data pushes within the envelope
+        pushes: Vec<usize>,
+    },
 }
 
 impl EmbeddingLocation {
@@ -86,6 +98,7 @@ impl EmbeddingLocation {
     pub fn to_type(&self) -> EmbeddingType {
         match self {
             EmbeddingLocation::OpReturn { .. } => EmbeddingType::OpReturn,
+            EmbeddingLocation::BareEnvelope { .. } => EmbeddingType::BareEnvelope,
             EmbeddingLocation::TaprootAnnex { .. } => EmbeddingType::TaprootAnnex,
             EmbeddingLocation::WitnessEnvelope { script_type, .. } => {
                 EmbeddingType::WitnessEnvelope(*script_type)
@@ -140,6 +153,7 @@ impl Embedding {
 
         let (index, sub_index) = match self.location {
             EmbeddingLocation::OpReturn { output } => (output, None),
+            EmbeddingLocation::BareEnvelope { output, index, .. } => (output, Some(index)),
             EmbeddingLocation::TaprootAnnex { input } => (input, None),
             EmbeddingLocation::WitnessEnvelope { input, index, .. } => (input, Some(index)),
         };
@@ -163,19 +177,41 @@ impl Embedding {
         let mut embeddings = Vec::new();
         let txid = tx.compute_txid();
 
-        // OP_RETURN
+        // OP_RETURN / Bare Envelope
         for (output, txout) in tx.output.iter().enumerate() {
-            if !txout.script_pubkey.is_op_return() {
-                continue;
+            if txout.script_pubkey.is_op_return() {
+                let location = EmbeddingLocation::OpReturn { output };
+
+                embeddings.push(Self {
+                    bytes: txout.script_pubkey.to_bytes()[1..].to_vec(),
+                    txid,
+                    location,
+                });
+            } else {
+                let envelopes = envelope::from_script(&txout.script_pubkey);
+
+                for (index, envelope) in envelopes.into_iter().enumerate() {
+                    let mut bytes = Vec::new();
+                    let mut pushes = Vec::new();
+
+                    for chunk in envelope {
+                        bytes.extend(chunk.clone());
+                        pushes.push(chunk.len());
+                    }
+
+                    let location = EmbeddingLocation::BareEnvelope {
+                        output,
+                        index,
+                        pushes,
+                    };
+
+                    embeddings.push(Self {
+                        bytes,
+                        txid,
+                        location,
+                    });
+                }
             }
-
-            let location = EmbeddingLocation::OpReturn { output };
-
-            embeddings.push(Self {
-                bytes: txout.script_pubkey.to_bytes()[1..].to_vec(),
-                txid,
-                location,
-            });
         }
 
         // Witness Envelope
@@ -262,6 +298,7 @@ impl fmt::Display for EmbeddingType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             EmbeddingType::OpReturn => write!(f, "OP_RETURN"),
+            EmbeddingType::BareEnvelope => write!(f, "Bare Envelope"),
             EmbeddingType::TaprootAnnex => write!(f, "Taproot Annex"),
             EmbeddingType::WitnessEnvelope(script_type) => write!(f, "{script_type} Envelope"),
         }
@@ -273,6 +310,9 @@ impl fmt::Display for EmbeddingLocation {
         match self {
             EmbeddingLocation::OpReturn { output } => {
                 write!(f, "OP_RETURN at output {output}")
+            }
+            EmbeddingLocation::BareEnvelope { output, index, .. } => {
+                write!(f, "Bare Envelope at output {} (index {})", output, index)
             }
             EmbeddingLocation::TaprootAnnex { input } => {
                 write!(f, "Taproot Annex at input {input}")
@@ -316,6 +356,20 @@ impl fmt::Display for EmbeddingId {
 
                 write!(f, "{}:{}:{}", self.txid, type_code, self.index)
             }
+            EmbeddingType::BareEnvelope => {
+                let type_code = "be";
+                if let Some(sub_index) = self.sub_index {
+                    if sub_index > 0 {
+                        return write!(
+                            f,
+                            "{}:{}:{}:{}",
+                            self.txid, type_code, self.index, sub_index
+                        );
+                    }
+                }
+
+                write!(f, "{}:{}:{}", self.txid, type_code, self.index)
+            }
         }
     }
 }
@@ -334,6 +388,7 @@ impl FromStr for EmbeddingId {
 
         let embedding_type = match parts[1] {
             "rt" => EmbeddingType::OpReturn,
+            "be" => EmbeddingType::BareEnvelope,
             "ta" => EmbeddingType::TaprootAnnex,
             "le" => EmbeddingType::WitnessEnvelope(ScriptType::Legacy),
             "te" => EmbeddingType::WitnessEnvelope(ScriptType::Tapscript),
@@ -354,9 +409,14 @@ impl FromStr for EmbeddingId {
             None
         };
 
-        // sub_index should only be present in envelopes
+        // sub_index should only be present in witness and bare envelopes
         match embedding_type {
             EmbeddingType::WitnessEnvelope(_) => {
+                if sub_index.is_none() {
+                    sub_index = Some(0);
+                }
+            }
+            EmbeddingType::BareEnvelope => {
                 if sub_index.is_none() {
                     sub_index = Some(0);
                 }
