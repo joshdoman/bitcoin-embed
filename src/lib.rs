@@ -338,10 +338,10 @@ impl fmt::Display for EmbeddingId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.embedding_type {
             EmbeddingType::OpReturn => {
-                write!(f, "{}:{}:{}", self.txid, "rt", self.index)
+                write!(f, "{}:rt:{}", self.txid, self.index)
             }
             EmbeddingType::TaprootAnnex => {
-                write!(f, "{}:{}:{}", self.txid, "ta", self.index)
+                write!(f, "{}:ta:{}", self.txid, self.index)
             }
             EmbeddingType::WitnessEnvelope(script_type) => {
                 let type_code = match script_type {
@@ -1064,12 +1064,12 @@ mod tests {
 
         let txid_str = txid.to_string();
 
-        assert_eq!(op_return_id.to_string(), format!("{}:rt:2", txid_str));
-        assert_eq!(bare_id.to_string(), format!("{}:be:0:3", txid_str));
-        assert_eq!(bare_id2.to_string(), format!("{}:be:2", txid_str));
-        assert_eq!(annex_id.to_string(), format!("{}:ta:1", txid_str));
-        assert_eq!(legacy_id.to_string(), format!("{}:le:0:3", txid_str));
-        assert_eq!(tapscript_id.to_string(), format!("{}:te:2", txid_str));
+        assert_eq!(op_return_id.to_string(), format!("{txid_str}:rt:2"));
+        assert_eq!(bare_id.to_string(), format!("{txid_str}:be:0:3"));
+        assert_eq!(bare_id2.to_string(), format!("{txid_str}:be:2"));
+        assert_eq!(annex_id.to_string(), format!("{txid_str}:ta:1"));
+        assert_eq!(legacy_id.to_string(), format!("{txid_str}:le:0:3"));
+        assert_eq!(tapscript_id.to_string(), format!("{txid_str}:te:2"));
     }
 
     #[test]
