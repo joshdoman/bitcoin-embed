@@ -481,7 +481,13 @@ mod tests {
             EmbeddingType::WitnessEnvelope(ScriptType::Tapscript)
         );
 
-        for loc in [op_return_loc, bare_loc, annex_loc, legacy_loc, tapscript_loc] {
+        for loc in [
+            op_return_loc,
+            bare_loc,
+            annex_loc,
+            legacy_loc,
+            tapscript_loc,
+        ] {
             let embedding = Embedding {
                 bytes: vec![1, 2, 3],
                 txid: Txid::all_zeros(),
@@ -557,8 +563,14 @@ mod tests {
             lock_time: LockTime::ZERO,
             input: vec![],
             output: vec![
-                TxOut { value: Amount::from_sat(1000), script_pubkey: script0 },
-                TxOut { value: Amount::from_sat(2000), script_pubkey: script1 },
+                TxOut {
+                    value: Amount::from_sat(1000),
+                    script_pubkey: script0,
+                },
+                TxOut {
+                    value: Amount::from_sat(2000),
+                    script_pubkey: script1,
+                },
             ],
         };
 
@@ -568,17 +580,29 @@ mod tests {
         assert_eq!(embeddings[0].bytes, b"data1");
         assert_eq!(
             embeddings[0].location,
-            EmbeddingLocation::BareEnvelope { output: 0, index: 0, pushes: vec![5] }
+            EmbeddingLocation::BareEnvelope {
+                output: 0,
+                index: 0,
+                pushes: vec![5]
+            }
         );
         assert_eq!(embeddings[1].bytes, b"data2");
         assert_eq!(
             embeddings[1].location,
-            EmbeddingLocation::BareEnvelope { output: 0, index: 1, pushes: vec![5] }
+            EmbeddingLocation::BareEnvelope {
+                output: 0,
+                index: 1,
+                pushes: vec![5]
+            }
         );
         assert_eq!(embeddings[2].bytes, b"data3data4");
         assert_eq!(
             embeddings[2].location,
-            EmbeddingLocation::BareEnvelope { output: 1, index: 0, pushes: vec![5, 5] }
+            EmbeddingLocation::BareEnvelope {
+                output: 1,
+                index: 0,
+                pushes: vec![5, 5]
+            }
         );
     }
 
@@ -799,8 +823,10 @@ mod tests {
 
         // 5. Create bare envelope output
         let bare_builder = envelope::append_bytes_to_builder(b"bare-data", Builder::new());
-        let bare_output =
-            TxOut { value: Amount::from_sat(5000), script_pubkey: bare_builder.into_script() };
+        let bare_output = TxOut {
+            value: Amount::from_sat(5000),
+            script_pubkey: bare_builder.into_script(),
+        };
 
         // Create the transaction
         let tx = Transaction {
@@ -866,7 +892,11 @@ mod tests {
         assert_eq!(embeddings[2].bytes, b"bare-data");
         assert_eq!(
             embeddings[2].location,
-            EmbeddingLocation::BareEnvelope { output: 3, index: 0, pushes: vec![9] }
+            EmbeddingLocation::BareEnvelope {
+                output: 3,
+                index: 0,
+                pushes: vec![9]
+            }
         );
 
         assert_eq!(embeddings[3].bytes, b"p2wsh-data");
@@ -1095,7 +1125,11 @@ mod tests {
         let bare_embedding = Embedding {
             bytes: vec![1, 2, 3],
             txid,
-            location: EmbeddingLocation::BareEnvelope { output: 0, index: 1, pushes: vec![] },
+            location: EmbeddingLocation::BareEnvelope {
+                output: 0,
+                index: 1,
+                pushes: vec![],
+            },
         };
         let bare_id = bare_embedding.id();
         assert_eq!(bare_id.txid, txid);
