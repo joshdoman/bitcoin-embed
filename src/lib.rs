@@ -1,7 +1,7 @@
 //! # Bitcoin Embed
 //!
 //! A library for embedding arbitrary data and TLV-encoded messages in Bitcoin transactions. Supports
-//! OP_RETURN outputs, witness script envelopes, and taproot annexes.
+//! OP_RETURN outputs, witness script envelopes, bare script envelopes, and taproot annexes.
 //!
 //! See README.md for detailed documentation.
 
